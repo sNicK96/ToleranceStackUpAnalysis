@@ -11,7 +11,7 @@
 
 namespace Application {
 
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 //  DxfToken
 //  One group code + value pair read from the
 //  DXF file. The atomic unit of DXF parsing.
@@ -19,7 +19,7 @@ namespace Application {
 //  Every two lines in a DXF file form one token:
 //    Line 1: group code (integer)
 //    Line 2: value      (string — we convert later)
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 struct DxfToken
 {
     int         group_code  = 0;
@@ -32,7 +32,7 @@ struct DxfToken
     bool        is_empty()  const { return value.empty(); }
 };
 
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 //  DxfEntity
 //  All group codes collected for one entity
 //  before we process it into a Dimension.
@@ -49,7 +49,7 @@ struct DxfToken
 //
 //  We collect all these into one DxfEntity,
 //  then convert it to a Dimension in one shot.
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 struct DxfEntity
 {
     std::string entity_type;    // "DIMENSION", "TOLERANCE", "TEXT", "LINE" ...
@@ -63,7 +63,7 @@ struct DxfEntity
     // Source location — for traceability and error reporting
     int         start_line  = -1;
 
-    // ── Convenience accessors ─────────────────
+    // ── Convenience accessors ───
     // Returns empty string if code not present
     std::string get_string (int code) const;
     double      get_double (int code, double  default_val = 0.0) const;
@@ -73,12 +73,12 @@ struct DxfEntity
     bool        is_type    (const std::string& type) const;
 };
 
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 //  DxfSectionType
 //  Which section of the DXF file we are in.
 //  We skip most sections — only ENTITIES
 //  and BLOCKS contain dimension data.
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 enum class DxfSectionType
 {
     None,
@@ -90,12 +90,12 @@ enum class DxfSectionType
     Unknown
 };
 
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 //  DxfParserStats
 //  Diagnostic counters — how many of each
 //  entity type were seen and processed.
 //  Useful for debugging and unit tests.
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 struct DxfParserStats
 {
     int total_lines_read        = 0;
@@ -107,7 +107,7 @@ struct DxfParserStats
     int tolerance_parse_errors  = 0;    // annotation strings we couldn't parse
 };
 
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 //  DxfParser
 //  Parses DXF files and extracts dimensions,
 //  tolerances, and GD&T annotations.
@@ -117,14 +117,14 @@ struct DxfParserStats
 //    auto result = parser.parse("shaft.dxf");
 //    if (result.success)
 //        auto& dims = result.data.value();
-// ─────────────────────────────────────────────
+// -----------------------------------------------
 class DxfParser : public IDrawingParser
 {
 public:
     DxfParser();
     ~DxfParser() override = default;
 
-    // ── IDrawingParser interface ──────────────
+    // IDrawingParser interface
 
     ParseResult parse(
         const std::string&  file_path,
@@ -145,7 +145,7 @@ public:
     // Validates DXF by checking "AC10" magic header bytes
     bool validate(const std::string& file_path) const override;
 
-    // ── DXF-specific extras ───────────────────
+    // DXF-specific extras
 
     // Returns stats from the last parse() call
     // Useful for debugging and unit tests
@@ -153,21 +153,21 @@ public:
 
 private:
 
-    // ── Phase 1: File reading ─────────────────
+    //File reading
 
     // Opens the file and reads all tokens into a flat list
     // Returns false if file cannot be opened
     bool read_tokens(const std::string&     file_path,
                      std::vector<DxfToken>& out_tokens);
 
-    // ── Phase 2: Tokenise into entities ───────
+    //Tokenise into entities
 
     // Groups flat token list into DxfEntity objects
     // Each entity starts when group code 0 is seen
     std::vector<DxfEntity> tokenise_entities(
         const std::vector<DxfToken>& tokens);
 
-    // ── Phase 3: Section routing ──────────────
+    //Section routing
 
     // Determines which DXF section a token belongs to
     DxfSectionType identify_section(const std::string& section_name) const;
@@ -176,7 +176,7 @@ private:
     // We only care about ENTITIES and BLOCKS
     bool should_process_section(DxfSectionType section) const;
 
-    // ── Phase 4: Entity processing ────────────
+    //Entity processing
 
     // Master dispatcher — routes entity to correct handler
     // Returns nullopt if entity should be skipped
@@ -189,32 +189,44 @@ private:
     std::optional<Dimension> process_tolerance  (const DxfEntity& entity);  // GD&T frames
     std::optional<Dimension> process_text       (const DxfEntity& entity);  // fallback text dims
 
-    // ── Phase 5: Dimension type resolution ────
+    // Dimension type resolution
 
     // Converts DXF dimension type flag (group code 70)
     // to our DimensionType enum
     DimensionType resolve_dimension_type(int dxf_flag) const;
 
-    // ── Layer filtering ───────────────────────
+    // Layer filtering
 
     // Returns true if this entity's layer passes the filter
     bool passes_layer_filter(const DxfEntity&    entity,
                              const ParseOptions& options) const;
 
-    // ── Header reading ────────────────────────
+    // Header reading
 
     // Reads $INSUNITS from HEADER section
     // Sets internal unit scale factor (mm vs inches)
     void read_header_variables(const std::vector<DxfEntity>& entities);
 
-    // ── ID generation ─────────────────────────
+    // ID generation
 
     // Generates sequential IDs: D01, D02, D03 ...
     // G01, G02 ... for GD&T entries
     std::string next_dimension_id();
     std::string next_gdt_id();
 
-    // ── Utility ───────────────────────────────
+    // GD&T characteristic lookup
+    GDTCharacteristic resolve_gdt_characteristic(
+        const std::string& char_str) const;
+
+    // Label builders
+    std::string build_label(
+        DimensionType                   dim_type,
+        const std::optional<double>&    nominal,
+        const std::string&              annotation) const;
+
+    std::string build_gdt_label(const Tolerance& tol) const;
+
+    // Utility
 
     // Strips DXF special codes from annotation strings
     // %%C → Ø,  %%P → ±,  %%D → °
@@ -223,7 +235,7 @@ private:
     // Extracts file extension, lowercased
     static std::string get_extension(const std::string& file_path);
 
-    // ── Internal state ────────────────────────
+    // Internal state
     // Reset at the start of every parse() call
 
     ToleranceStringParser   tol_parser_;    // reused across entities
