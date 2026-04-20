@@ -9,17 +9,11 @@
 
 namespace Application {
 
-// ------------------------------------------------------------------
-//  PdfTextBox
-//  One piece of text extracted from a PDF page
-//  with its position and size on the page.
-//
-//  Poppler gives us these raw — we cluster,
-//  filter, and parse them into Dimensions.
-// ------------------------------------------------------------------
+// PdfTextBox: one piece of text extracted from a PDF page with its position and size.
+// Poppler gives us these raw — we cluster, filter, and parse them into Dimensions.
 struct PdfTextBox
 {
-    std::string text;           // raw text content
+    std::string text;          // raw text content
     double      x       = 0.0; // left edge position (points)
     double      y       = 0.0; // bottom edge position (points)
     double      width   = 0.0; // bounding box width
@@ -29,20 +23,15 @@ struct PdfTextBox
     // Right edge — used for horizontal clustering
     double right() const { return x + width; }
 
-    // Vertical centre — used for same-line detection
+    // Vertical center — used for same-line detection
     double centre_y() const { return y + height / 2.0; }
 };
 
-// ------------------------------------------------------------------
-//  PdfTextCluster
-//  A group of PdfTextBoxes that belong together
-//  on the same line — merged into one string
-//  before being passed to ToleranceStringParser.
+// PdfTextCluster: a group of PdfTextBoxes that belong together on the same line.
+// The boxes are merged into one string before being passed to ToleranceStringParser.
 //
-//  Example:
-//    box "140" + box "±" + box "0.100"
-//    → cluster.merged_text = "140 ±0.100"
-// ------------------------------------------------------------------
+// Example:
+//   box "140" + box "±" + box "0.100" -> cluster.merged_text = "140 ±0.100"
 struct PdfTextCluster
 {
     std::string         merged_text;    // all boxes joined with spaces
@@ -51,8 +40,7 @@ struct PdfTextCluster
     double              x       = 0.0;  // leftmost x of all boxes
     double              y       = 0.0;  // y of first box
 
-    // Average text height across all boxes in cluster
-    // Used as a noise filter — tiny text is not a dimension
+    // Average text height across all boxes in the cluster; used as a noise filter.
     double avg_height() const
     {
         if (boxes.empty()) return 0.0;
@@ -62,10 +50,7 @@ struct PdfTextCluster
     }
 };
 
-// ------------------------------------------------------------------
-//  PdfParserStats
-//  Diagnostic counters from last parse() call
-// ------------------------------------------------------------------
+// PdfParserStats: diagnostic counters from the last parse() call.
 struct PdfParserStats
 {
     int pages_processed         = 0;
@@ -78,54 +63,39 @@ struct PdfParserStats
     int clusters_rejected_noise = 0;
 };
 
-// ------------------------------------------------------------------
-//  PdfClusteringOptions
-//  Controls how text boxes are grouped
-//  into clusters. Tuned for typical
-//  mechanical drawing annotation sizes.
-// ------------------------------------------------------------------
+// PdfClusteringOptions: controls how text boxes are grouped into clusters.
+// Tuned for typical mechanical drawing annotation sizes.
 struct PdfClusteringOptions
 {
-    // Two boxes are on the same line if their
-    // centre_y values differ by less than this
+    // Two boxes are on the same line if their center_y values differ by less than this.
     double same_line_y_threshold    = 3.0;  // points
 
-    // Two boxes on the same line are merged if
-    // the gap between them is less than this
+    // Two boxes on the same line are merged if the gap between them is less than this.
     double same_cluster_x_gap       = 12.0; // points
 
-    // Minimum text height to consider as a dimension
-    // Filters out tiny notes, hatching labels etc.
+    // Minimum text height to consider as a dimension; filters out tiny notes and hatching labels.
     double min_text_height          = 4.0;  // points (~1.4mm at 72dpi)
 
-    // Maximum cluster text length
-    // Longer strings are likely notes, not dimensions
+    // Maximum cluster text length; longer strings are likely notes, not dimensions.
     std::size_t max_cluster_length  = 40;   // characters
 };
 
-// ------------------------------------------------------------------
-//  PdfParser
-//  Parses vector PDF engineering drawings and
-//  extracts dimensional annotations.
+// PdfParser: parses vector PDF engineering drawings and extracts dimensional annotations.
+// Depends on Poppler-cpp for PDF reading. All poppler types are kept in the .cpp, so
+// this header has no poppler dependencies.
 //
-//  Depends on libpoppler-cpp for PDF reading.
-//  All poppler types are kept in the .cpp —
-//  this header has no poppler dependencies.
-//
-//  Usage:
-//    PdfParser parser;
-//    auto result = parser.parse("shaft.pdf");
-//    if (result.success)
-//        auto& dims = result.data.value();
-// ------------------------------------------------------------------
+// Usage:
+//   PdfParser parser;
+//   auto result = parser.parse("shaft.pdf");
+//   if (result.success)
+//       auto& dims = result.data.value();
 class PdfParser : public IDrawingParser
 {
 public:
     PdfParser();
     ~PdfParser() override = default;
 
-    // ── IDrawingParser interface
-
+    // IDrawingParser interface
     ParseResult parse(
         const std::string&  file_path,
         const ParseOptions& options = ParseOptions{}) override;
@@ -145,10 +115,9 @@ public:
     // Validates PDF by checking "%PDF" magic header bytes
     bool validate(const std::string& file_path) const override;
 
-    //PDF-specific extras
-
-    const PdfParserStats&       last_stats()            const { return stats_; }
-    const PdfClusteringOptions& clustering_options()    const { return cluster_opts_; }
+    // PDF-specific extras
+    const PdfParserStats&       last_stats()         const { return stats_; }
+    const PdfClusteringOptions& clustering_options() const { return cluster_opts_; }
 
     // Allow caller to tune clustering before parsing
     void set_clustering_options(const PdfClusteringOptions& opts)
@@ -157,68 +126,67 @@ public:
     }
 
 private:
-
-    //Phase 1: Text extraction
-
-    // Extracts all PdfTextBoxes from one page using poppler
-    // Returns empty vector if page cannot be read
-    std::vector<PdfTextBox> extract_text_boxes(
+    // Text extraction
+    // Extracts all PdfTextBoxes from one page using poppler; returns an empty vector if the page cannot be read.
+    static std::vector<PdfTextBox> extract_text_boxes(
         int                 page_index,
-        const std::string&  file_path) const;
+        const std::string&  file_path) ;
 
-    //Phase 2: Spatial clustering
-
-    // Groups nearby text boxes on the same line
-    // into PdfTextCluster objects
+    // Spatial clustering
+    // Groups nearby text boxes on the same line into PdfTextCluster objects.
     std::vector<PdfTextCluster> cluster_text_boxes(
         std::vector<PdfTextBox>& boxes) const;
 
-    // Sorts boxes left-to-right, top-to-bottom
-    // Must run before clustering
+    // Sorts boxes left-to-right, top-to-bottom; must run before clustering.
     void sort_text_boxes(std::vector<PdfTextBox>& boxes) const;
 
-    // Merges a group of boxes into one cluster
-    PdfTextCluster merge_into_cluster(
+    // Merges a group of boxes into one cluster.
+    static PdfTextCluster merge_into_cluster(
         const std::vector<PdfTextBox>& group,
-        int page) const;
+        int page) ;
 
-    //Phase 3: Noise filtering
-
-    // Returns true if a cluster is likely to be
-    // a dimension annotation rather than a label or note
+    // Noise filtering
+    // Returns true if a cluster is likely to be a dimension annotation rather than a label or note.
     bool passes_noise_filter(
         const PdfTextCluster&   cluster,
         const ParseOptions&     options) const;
 
-    // Individual filter checks — separated for clarity
+    bool has_dimension_content(const std::string &text);
+
+    static bool has_tolerance_indicator(const std::string &text);
+
+    // Individual filter checks — separated for clarity.
     bool has_dimension_content  (const std::string& text) const;
-    bool has_tolerance_indicator(const std::string& text) const;
+    // bool has_tolerance_indicator(const std::string& text) const;
     bool is_reasonable_length   (const std::string& text) const;
 
-    //Phase 4: Dimension building
+    // Dimension building
+    // std::string build_pdf_label(DimensionType dimension, std::optional<double> nominal, const std::string & text);
 
-    // Attempts to build a Dimension from a cluster
-    // Returns nullopt if cluster is not a parseable dimension
+    // Attempts to build a Dimension from a cluster; returns nullptr if the cluster is not a parseable dimension.
     std::optional<Dimension> build_dimension(
         const PdfTextCluster&   cluster,
         const ParseOptions&     options);
 
-    //Label builder
-    std::string build_pdf_label(
-        DimensionType                   dim_type,
-        const std::optional<double>&    nominal,
-        const std::string&              raw_text) const;
+    static std::string build_pdf_label(DimensionType dim_type, const std::optional<double> &nominal,
+                                const std::string &raw_text);
 
-    //ID generation
+    // Label builder
+    // std::string build_pdf_label(
+    //     DimensionType                   dim_type,
+    //     const std::optional<double>&    nominal,
+    //     const std::string&              raw_text) const;
+
+    // ID generation
     std::string next_dimension_id();
     std::string next_gdt_id();
 
-    //Utility ───
+    // Utility
     static std::string get_extension(const std::string& file_path);
 
     void reset_state();
 
-    //Internal state
+    // Internal state
     ToleranceStringParser   tol_parser_;
     PdfParserStats          stats_;
     PdfClusteringOptions    cluster_opts_;
